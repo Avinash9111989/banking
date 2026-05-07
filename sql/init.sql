@@ -1,98 +1,137 @@
+-- ===================================
 -- Banking Database Schema
+-- ===================================
 
--- Create Database
-CREATE DATABASE IF NOT EXISTS banking_db;
-USE banking_db;
+-- Drop existing tables if they exist
+DROP TABLE IF EXISTS user_roles;
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS accounts;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS roles;
 
+-- ===================================
 -- Roles Table
+-- ===================================
 CREATE TABLE roles (
-    role_id INT AUTO_INCREMENT PRIMARY KEY,
-    role_name VARCHAR(50) UNIQUE NOT NULL,
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    role_name VARCHAR(50) NOT NULL UNIQUE,
+    description VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Insert default roles
+INSERT INTO roles (role_name, description) VALUES
+('ROLE_ADMIN', 'Administrator with full access'),
+('ROLE_USER', 'Regular user with basic access'),
+('ROLE_MANAGER', 'Manager with limited admin access');
+
+-- ===================================
 -- Users Table
+-- ===================================
 CREATE TABLE users (
-    user_id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
     phone_number VARCHAR(20),
+    date_of_birth DATE,
+    address VARCHAR(255),
+    city VARCHAR(50),
+    country VARCHAR(50),
+    postal_code VARCHAR(20),
     is_active BOOLEAN DEFAULT TRUE,
+    is_verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_email (email),
-    INDEX idx_username (username)
+    last_login TIMESTAMP NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- User Roles Junction Table
+CREATE UNIQUE INDEX idx_users_email ON users(email);
+CREATE UNIQUE INDEX idx_users_username ON users(username);
+
+-- ===================================
+-- User Roles Mapping Table
+-- ===================================
 CREATE TABLE user_roles (
-    user_id INT NOT NULL,
+    user_id BIGINT NOT NULL,
     role_id INT NOT NULL,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, role_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (role_id) REFERENCES roles(role_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ===================================
 -- Accounts Table
+-- ===================================
 CREATE TABLE accounts (
-    account_id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    account_number VARCHAR(50) UNIQUE NOT NULL,
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    account_number VARCHAR(20) NOT NULL UNIQUE,
     account_type ENUM('SAVINGS', 'CHECKING', 'BUSINESS') NOT NULL,
     account_name VARCHAR(100) NOT NULL,
-    balance DECIMAL(15, 2) DEFAULT 0.00,
+    balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
     currency VARCHAR(3) DEFAULT 'USD',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    INDEX idx_user_id (user_id),
-    INDEX idx_account_number (account_number)
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_account_number (account_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE INDEX idx_accounts_user_id ON accounts(user_id);
+CREATE INDEX idx_accounts_account_number ON accounts(account_number);
+
+-- ===================================
 -- Transactions Table
+-- ===================================
 CREATE TABLE transactions (
-    transaction_id INT AUTO_INCREMENT PRIMARY KEY,
-    from_account_id INT NOT NULL,
-    to_account_id INT NOT NULL,
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    from_account_id BIGINT NOT NULL,
+    to_account_id BIGINT NOT NULL,
     amount DECIMAL(15, 2) NOT NULL,
-    transaction_type ENUM('TRANSFER', 'DEPOSIT', 'WITHDRAWAL') NOT NULL,
-    status ENUM('PENDING', 'SUCCESS', 'FAILED') DEFAULT 'PENDING',
+    transaction_type ENUM('TRANSFER', 'DEPOSIT', 'WITHDRAWAL', 'PAYMENT') NOT NULL,
+    status ENUM('PENDING', 'COMPLETED', 'FAILED', 'CANCELLED') DEFAULT 'PENDING',
     description VARCHAR(255),
-    reference_number VARCHAR(100) UNIQUE,
+    reference_number VARCHAR(50) UNIQUE,
+    notes VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (from_account_id) REFERENCES accounts(account_id),
-    FOREIGN KEY (to_account_id) REFERENCES accounts(account_id),
-    INDEX idx_from_account (from_account_id),
-    INDEX idx_to_account (to_account_id),
-    INDEX idx_created_at (created_at)
+    completed_at TIMESTAMP NULL,
+    FOREIGN KEY (from_account_id) REFERENCES accounts(id),
+    FOREIGN KEY (to_account_id) REFERENCES accounts(id),
+    UNIQUE KEY uk_reference_number (reference_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert Default Roles
-INSERT INTO roles (role_name) VALUES ('ROLE_ADMIN');
-INSERT INTO roles (role_name) VALUES ('ROLE_USER');
-INSERT INTO roles (role_name) VALUES ('ROLE_MANAGER');
+CREATE INDEX idx_transactions_from_account ON transactions(from_account_id);
+CREATE INDEX idx_transactions_to_account ON transactions(to_account_id);
+CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 
--- Create Audit Log Table
+-- ===================================
+-- Audit Log Table
+-- ===================================
 CREATE TABLE audit_logs (
-    audit_id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    action VARCHAR(100) NOT NULL,
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT,
     entity_type VARCHAR(50),
-    entity_id INT,
-    description TEXT,
+    entity_id BIGINT,
+    action VARCHAR(50),
+    old_value LONGTEXT,
+    new_value LONGTEXT,
     ip_address VARCHAR(45),
+    user_agent VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL,
-    INDEX idx_created_at (created_at),
-    INDEX idx_user_id (user_id)
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Create Indexes for Performance
-CREATE INDEX idx_transaction_status ON transactions(status);
-CREATE INDEX idx_account_user ON accounts(user_id);
-CREATE INDEX idx_transaction_date ON transactions(created_at);
+CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
+
+-- ===================================
+-- Database Grants
+-- ===================================
+GRANT ALL PRIVILEGES ON banking_db.* TO 'banking_user'@'%';
+FLUSH PRIVILEGES;
